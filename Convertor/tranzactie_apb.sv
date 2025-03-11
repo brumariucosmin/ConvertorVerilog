@@ -9,26 +9,31 @@ class apb_transaction extends uvm_sequence_item;
   `uvm_object_utils(tranzactie_senzor)
   
   rand bit[ADDR_WIDTH-1:0] addr;
-  rand bit pwrite;
+  rand bit write;
   rand bit [DATA_WIDTH-1:0] data;
-  bit err;
-  unsigned delay;
+  rand bit err;
+  rand int delay;
+  
+  
+  constraint delay_c {delay inside {[1:15]};}
 
     //functie de afisare a unei tranzactii
   function void post_randomize();
     $display("--------- [Trans] post_randomize ------");
     //$display("\t paddr  = %0h",paddr);
-    $display("\t paddr  = %0h\t pwrite = %0h\t pwdata = %0h" ,paddr,pwrite,pwdata);
+    $display("\t addr  = %0h\t write = %0h\t data = %0h \t err = %0h \t delay = %0d" ,addr,write,data, err, delay);
     $display("-----------------------------------------");
   endfunction
 
   function apb_transaction copy();
-    copy = new();
-    copy.paddr  = this.addr;
-    copy.pwrite = this.pwrite;
-    copy.data = this.data;
-   // copy.delay = this.delay;]
-    return copy;
+  apb_transaction transaction;
+    transaction = new();
+    transaction.paddr  = this.addr;
+    transaction.write = this.write;
+    transaction.data = this.data;
+    transaction.delay = this.delay;
+	transaction.err = this.err;
+    return transaction;
   endfunction
   
 endclass

@@ -3,7 +3,7 @@ class spi_transaction;
   // Semnale pentru interfața SPI
   rand bit [7:0] data;
   
-  }
+  
      // Funcție de afișare a tranzacției generate
   function void post_randomize();
     $display("--------- [SPI Trans] post_randomize ------");

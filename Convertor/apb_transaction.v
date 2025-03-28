@@ -8,7 +8,7 @@ class apb_transaction extends uvm_sequence_item;
     //componenta tranzactie se adauga in baza de date
   `uvm_object_utils(tranzactie_senzor)
   
-  rand bit[ADDR_WIDTH-1:0] addr;
+  rand bit[ADDR_WIDTH  -1:0] addr;
   rand bit write;// 1: tranzactie de scriere; 0: tranzactie de citire
   rand bit [DATA_WIDTH-1:0] data;
   rand bit err;

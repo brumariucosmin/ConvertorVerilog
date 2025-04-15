@@ -6,63 +6,176 @@ import uvm_pkg::*;
 
 //se declara prefixele pe care le vor avea elementele folosite pentru a prelua datele de la agentul de intrari, respectiv de la agentul de semafoare
 `uvm_analysis_imp_decl(_apb)
+`uvm_analysis_imp_decl(_spi)
 
 class scoreboard extends uvm_scoreboard;
+
+
+reg [7:0] reg_operand1, reg_operand1_to_modify; // adresa 0
+reg [7:0] reg_result; // adresa 2
+reg [7:0] reg_ctrl; // adresa 4
   
   //se adauga componenta in baza de date UVM
   `uvm_component_utils(scoreboard)
   
   //se declara porturile prin intermediul carora scoreboardul primeste datele de la agenti, aceste date reflectand functionalitatea DUT-ului
-  //a se observa ca prefixele declarate mai sus intra in componenta tipului de data al porturilor
-  //pentru fiecare port declarat, se spune carui tip de scoreboard ii apartine (in situatia de fata avem doar o clasa care defineste scoreboardul cu numele "scoreboard") portul, si ce tip de date vor fi vehiculate pe portul respectiv
-  uvm_analysis_imp_apb #(tranzactie_apb, scoreboard) port_pentru_datele_de_laapb;
-  
-  //pentru a inregistra coverage-ul dorit avem nevoie sa stim atat ce valori au venit de la apbi
-  tranzactie_apb tranzactie_venita_de_la_apb;
+  uvm_analysis_imp_apb #(apb_transaction, scoreboard) port_pentru_datele_de_la_apb;
+  uvm_analysis_imp_spi #(tranzactie_spi, scoreboard) port_pentru_datele_de_laSpi;
+
+  //se declara structurile necesare pentru verificare
+  apb_transaction tranzactie_venita_de_la_apb; // datele primite de la APB
+  tranzactie_spi tranzactie_venita_de_la_spi; // datele primite de la SPI
+  tranzactie_spi tranzactie_prezisa_de_referinta; // datele calculate de scoreboard
   
   bit enable;
+  logic [7:0] nr_binar;
+  genvar i;
   
    //constructorul clasei
   function new(string name="scoreboard", uvm_component parent=null);
-    //se apeleaza mai intai constructorul clasei parinte
     super.new(name, parent);
-    //crearea porturilor
-    port_pentru_datele_de_laapb = new("pentru_datele_de_laapb", this);
-    
-    
-    //se creeaza tranzactia necesare pentru coverage:
+    // Initializarea porturilor
+    port_pentru_datele_de_la_apb = new("pentru_datele_de_laapb", this);
+    port_pentru_datele_de_laSpi = new("pentru_datele_de_laspi", this);
+
+    // Inițializarea tranzacțiilor
+    tranzactie_prezisa_de_referinta = new();    
     tranzactie_venita_de_la_apb = new();    
+    tranzactie_venita_de_la_spi = new();    
+	
+	// Instanțierea covergroup-urilor
+	registers_cg = new();
   endfunction
-  
   
   virtual function void connect_phase (uvm_phase phase);
     super.connect_phase(phase);
-    
-    //in faza UVM "connect", se face conexiunea intre pointerul catre monitor din instanta colectorului de coverage a acestui monitor si monitorul insusi 
-    ///colector_coverage_fsm_actuator_inteligenta.p_scoreboard = this;
   endfunction
   
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
   endfunction
   
+  // Functie pentru calcularea conversiei de la decimal la binar
+  function tranzactie_spi compute_result(apb_transaction tranzactie_prezisa);
+    tranzactie_prezisa_de_referinta = new();
+        logic [7:0] numar_binar=0;
+        logic [7:0] decimal_value;
+        decimal_value = tranzactie_prezisa.data;
+        nr_binar = 8'b0;
+
+        // Conversia prin împărțiri succesive la 2
+        for (int i = 0; i < 8; i++) begin
+            nr_binar[i] = decimal_value % 2;
+            decimal_value = decimal_value / 2;
+        end
+ // Codare Gray
+		cod_gray = nr_binar ^ (nr_binar >> 1);
+		tranzactie_prezisa_de_referinta.data = cod_gray;
+
+    return tranzactie_prezisa_de_referinta;
+  endfunction
   
-  //fiecare port de analiza UVM are atasata o functie write; prefixul declarat la inceputul acestui fisier pentru fiecare port se ataseaza automat functiei write, obtinand denumirile de mai jos
-  //functiile write ale fiecarui port de date sunt apelate de componentele care pun date pe respectivul port (a se vedea fisierele unde sunt declarati agentii); aici, respectivele functii sunt implementate, pentru ca scoreboardul sa stie cum sa reactioneze atunci cand primeste date pe fiecare din porturi
-  function void write_apb(input tranzactie_apb tranzactie_noua_apb);  
+  function logic [7:0] decode_gray(logic [7:0] gray);
+    logic [7:0] bin;
+    bin[7] = gray[7];
+    for (int i = 6; i >= 0; i--) begin
+      bin[i] = bin[i+1] ^ gray[i];
+    end
+    return bin;
+  endfunction
+  
+  
+  
+  // Functie apelata cand primim date de la APB
+  function void write_apb(input apb_transaction tranzactie_noua_apb);  
     `uvm_info("SCOREBOARD", $sformatf("S-a primit de la agentul apb tranzactia cu informatia:\n"), UVM_LOW)
+	
+	if (tranzactie_noua_apb.write ==1) begin// write transactions
+		case (addr)
+	0: reg_operand1 <= tranzactie_noua_apb.data;
+	2: reg_result <= tranzactie_noua_apb.data;
+	4: reg_ctrl <= tranzactie_noua_apb.data;
+    default: $warning ("SCOREBOARD: wring address");
+	endcase
+	registers_cg.sample();
+	end
+	else
+		case (addr)
+	0: assert(reg_operand1 == tranzactie_noua_apb.data);
+	2: assert(reg_result == tranzactie_noua_apb.data);
+	4: assert(reg_ctrl == tranzactie_noua_apb.data);
+    default: $warning ("SCOREBOARD: wring address");
+	endcase
+	
     tranzactie_noua_apb.afiseaza_informatia_tranzactiei();
-   // if ((enable == 1 && posedge_for_enable_detected == 0) || negedge_for_enable_detected == 1) // se accepta doar datele primite in starea START, nu si un starea OFF; de asemenea, deoarece datele se citesc cu un tact intarziere de monitorul agentului, se accepta si citirea pe negedge de enable 
-    $display($sformatf("cand s-au primit date de la apbi, enable a fost %d",enable));
     
-	    tranzactie_venita_de_la_apb = new();
-        tranzactie_venita_de_la_apb = tranzactie_noua_apb.copy();
-      
+    // Salvam tranzactia nou primita
+    tranzactie_venita_de_la_apb = new();
+    tranzactie_venita_de_la_apb = tranzactie_noua_apb.copy();
+    
+    // Calculam rezultatul așteptat
+    tranzactie_prezisa_de_referinta = compute_result(tranzactie_venita_de_la_apb);
   endfunction : write_apb
   
-          
-  function verifica_corespondenta_datelor();
-  //checker
+  // Functie apelata cand primim date de la SPI
+  function void write_spi(input tranzactie_spi tranzactie_noua_spi);  
+    `uvm_info("SCOREBOARD", $sformatf("S-a primit de la agentul spi tranzactia cu informatia:\n"), UVM_LOW)
+    tranzactie_noua_spi.afiseaza_informatia_tranzactiei();
+    
+    // Salvam tranzactia nou primita
+    tranzactie_venita_de_la_spi = new();
+    tranzactie_venita_de_la_spi = tranzactie_noua_spi.copy();
+    
+    // Verificam corectitudinea conversiei
+    verifica_corespondenta_datelor();
+  endfunction : write_spi
+  
+  // Functie care verifica daca dataa primita de la SPI corespunde celei calculate
+  function void verifica_corespondenta_datelor();
+    if (tranzactie_venita_de_la_spi.data !== tranzactie_prezisa_de_referinta.data) begin
+        `uvm_error("SCOREBOARD", "Mismatch între dataa SPI și conversia preconizată!")
+    end else begin
+        `uvm_info("SCOREBOARD", "Conversia este corectă", UVM_LOW)
+    end
   endfunction
+  
+   function void verify_gray_decoding();
+    logic [7:0] decoded_binary;
+    decoded_binary = decode_gray(tranzactie_venita_de_la_spi.data);
+    if (decoded_binary !== tranzactie_venita_de_la_apb.data) begin
+      `uvm_error("SCOREBOARD", "Decodarea Gray nu corespunde cu numarul original!")
+    end else begin
+      `uvm_info("SCOREBOARD", "Codul Gray a fost decodat corect", UVM_LOW)
+    end
+  endfunction
+  
+  
+  covergroup registers_cg;
+    option.per_instance = 1;
+    reg_operand1_cp: coverpoint scoreboard.reg_operand1{
+        bins min_val = {0};
+        bins little_values = {[1:128]};
+		bins high_values = {[128:254]};
+      	bins max_val = {255};
+    reg_result_cp: coverpoint scoreboard.reg_result{
+        bins min_val = {0};
+        bins random_val[4] = {[1:$]};
+      	bins max_val = {255};
+    err_cp: coverpoint scoreboard.reg_ctrl[6];
+	end_cp: coverpoint scoreboard.reg_ctrl[1];
+
+  endgroup
+  
+  //se creeaza grupul de coverage; ATENTIE! Fara functia de mai jos, grupul de coverage nu va putea esantiona niciodata date deoarece pana acum el a fost doar declarat, nu si creat
+  function new(string name, uvm_component parent);
+    super.new(name, parent);
+    $cast(scoreboard, parent);//with the use of $cast, type check will occur during runtime
+	registers_cg = new();
+  endfunction
+  
+  
+endclass
+  
+
 endclass
 `endif

@@ -58,32 +58,14 @@ reg [7:0] reg_ctrl; // adresa 4
   // Functie pentru calcularea conversiei de la decimal la binar
   function tranzactie_spi compute_result(apb_transaction tranzactie_prezisa);
     tranzactie_prezisa_de_referinta = new();
-        logic [7:0] numar_binar=0;
-        logic [7:0] decimal_value;
-        decimal_value = tranzactie_prezisa.data;
         nr_binar = 8'b0;
 
-        // Conversia prin împărțiri succesive la 2
-        for (int i = 0; i < 8; i++) begin
-            nr_binar[i] = decimal_value % 2;
-            decimal_value = decimal_value / 2;
-        end
  // Codare Gray
 		cod_gray = nr_binar ^ (nr_binar >> 1);
 		tranzactie_prezisa_de_referinta.data = cod_gray;
 
     return tranzactie_prezisa_de_referinta;
   endfunction
-  
-  function logic [7:0] decode_gray(logic [7:0] gray);
-    logic [7:0] bin;
-    bin[7] = gray[7];
-    for (int i = 6; i >= 0; i--) begin
-      bin[i] = bin[i+1] ^ gray[i];
-    end
-    return bin;
-  endfunction
-  
   
   
   // Functie apelata cand primim date de la APB
@@ -136,16 +118,6 @@ reg [7:0] reg_ctrl; // adresa 4
         `uvm_error("SCOREBOARD", "Mismatch între dataa SPI și conversia preconizată!")
     end else begin
         `uvm_info("SCOREBOARD", "Conversia este corectă", UVM_LOW)
-    end
-  endfunction
-  
-   function void verify_gray_decoding();
-    logic [7:0] decoded_binary;
-    decoded_binary = decode_gray(tranzactie_venita_de_la_spi.data);
-    if (decoded_binary !== tranzactie_venita_de_la_apb.data) begin
-      `uvm_error("SCOREBOARD", "Decodarea Gray nu corespunde cu numarul original!")
-    end else begin
-      `uvm_info("SCOREBOARD", "Codul Gray a fost decodat corect", UVM_LOW)
     end
   endfunction
   

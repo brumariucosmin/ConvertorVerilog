@@ -61,7 +61,7 @@ module top();
 	.pready	(pready),
 	.prdata (prdata),
 	.mosi(mosi),
-	.old_cs (old_cs),
+	.cs (cs),
 	.pslverr (pslverr),
 	.sclk (sclk)
 );

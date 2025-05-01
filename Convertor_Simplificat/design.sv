@@ -1,6 +1,6 @@
 `include "counter.sv"
 
-module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwdata, psel, penable, miso, pwrite, pready, pslverr, prdata, mosi, old_cs, sclk);
+module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwdata, psel, penable, miso, pwrite, pready, pslverr, prdata, mosi, cs, sclk);
 
   input logic clk;
   input logic rst_n;
@@ -15,7 +15,7 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
   output logic pslverr;
   output logic[7:0] prdata;
   output logic mosi;
-  output logic old_cs;
+  output logic cs;
   output logic sclk;
 	
   reg [7:0] reg_operand, reg_result, reg_control; //adresele: 0, 2, 4
@@ -28,7 +28,7 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
   reg terminate_cnt;
   reg posedge_sclk, negedge_sclk, cs_delayed;
   reg sclk_delayed;
-  reg cs;
+  reg old_cs;
   
   counter counter_inst(
   .clk (clk),
@@ -41,13 +41,6 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
   .terminate_cnt (terminate_cnt)
   );
   
-	always @(posedge clk or negedge rst_n)
-		if(~rst_n)
-			sclk <= 0;
-		else if(old_cs == 0)
-			sclk <= ~sclk;
-			else
-			sclk <= 0;
 			
   always @(posedge clk or negedge rst_n)//read
 	if(~rst_n)
@@ -98,7 +91,18 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
 				 reg_control[7] <= 1;
 			    end
 				
-							
+				
+				
+  // sclk functioneaza doar cand cs are valoarea 0
+	always @(posedge clk or negedge rst_n)
+		if(~rst_n)
+			sclk <= 0;
+		else if(old_cs == 0)
+			sclk <= ~sclk;
+			else
+			sclk <= 0;
+				
+	// cs se activeaza (se duce in 0) cand este pornita o tranzactie din registru si se dezactiveaza cand fie este oprtia tranzactia din registru, fie s-au transmis toti bitii
 	always @(posedge clk or negedge rst_n)//old_cs
 		if(~rst_n)
 			old_cs<= 1;
@@ -107,19 +111,24 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
 			else if(reg_control[1] == 1 || count_out == 0)
 			old_cs <= 1;
 			
-			
-		always @(posedge clk or negedge rst_n)//cs_delayed
+			//se creeaza o versiune intarziata a semnalului cs, pentru ca mai apoi sa se extinda semnalul cs cu un tact
+		always @(posedge clk or negedge rst_n)//old_cs
 		if(~rst_n)
 			cs_delayed<= 1;
 			else
 			cs_delayed <= old_cs;
 			
+			//se extinde semnalul cs cu un tact
 			assign cs = cs_delayed & old_cs;
 			
+			//datele se transmit pe fiecare tact de sclk
+			// counterul functioneaza fie cand il lasam sa numere, fie cand il incarcam cu o valoare de la care va numara
 			assign enable = (~old_cs & negedge_sclk) | load;//cand old_cs nu este activat, nici counter-ul nu numara
 			
 	always @(*)//mosi
 	begin
+	
+	//datele se pun pe linia mosi pe frontul crescator de sclk atunci cand este o tranzactie pornita (cs ==0)
 		 if(old_cs == 0 && posedge_sclk )
 			mosi <= reg_result[count_out];
 			else if (cs ==1)
@@ -135,6 +144,8 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
 			
 	  assign posedge_sclk = sclk & ~sclk_delayed;
 	  assign negedge_sclk = ~sclk & sclk_delayed;
+	  
+	  //se preia din registru comanda de incepere a unei tranzactii spi, si se initializeaza numaratorul cu valoarea 7 (se vor transmite bitii de la 7 la 0)
 	assign load = reg_control[0];
 			
 	always @(posedge clk or negedge rst_n)
@@ -146,7 +157,7 @@ module converter #(parameter bit[7:0] NO_OF_SPI_BITS = 8)(clk, rst_n, paddr, pwd
 			else if(psel && !penable)
 			pready<=1;
 			
-	always @(posedge clk or negedge rst_n)//pslverr (in caz ca nu accesam o adresa corecta)
+	always @(posedge clk or negedge rst_n)//read
 		if(~rst_n)
 			pslverr<=0;
 			
